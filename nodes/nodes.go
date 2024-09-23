@@ -3,7 +3,12 @@ package nodes
 import (
 	"fmt"
 	"go-chain-visualise/parser"
+	"os"
+	"strings"
 	"sync"
+
+	"github.com/dominikbraun/graph"
+	"github.com/dominikbraun/graph/draw"
 )
 
 type Node struct {
@@ -57,4 +62,32 @@ func InitNodes(src string) ([]Node, error) {
 		network = append(network, NewNode(wid, txns))
 	}
 	return network, nil
+}
+
+func (n *Node) GenTxnVolume() map[string]int64 {
+	x := make(map[string]int64)
+	for _, t := range n.Txns {
+		tID := n.Wallet.ID + "|" + t.Reciever
+		x[tID] += 1
+	}
+	return x
+}
+
+type Network []Node
+
+func (n *Network) GenVolumeGraph(outputFile string) error {
+	g := graph.New(func(n *Node) string { return n.Wallet.ID }, graph.Directed())
+	var out []map[string]int64
+	for _, node := range *n {
+		_ = g.AddVertex(&node)
+		out = append(out, node.GenTxnVolume())
+	}
+	for _, vols := range out {
+		for tid, vol := range vols {
+			_ = g.AddEdge(strings.Split(tid, "|")[0], strings.Split(tid, "|")[1], graph.EdgeAttribute("txn_volume", fmt.Sprint(vol)), graph.EdgeWeight(1), graph.EdgeAttribute("Label", fmt.Sprint(vol)))
+		}
+	}
+	file, _ := os.Create(outputFile)
+	_ = draw.DOT(g, file)
+	return nil
 }

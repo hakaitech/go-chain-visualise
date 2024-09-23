@@ -4,13 +4,7 @@ import (
 	"go-chain-visualise/nodes"
 	"go-chain-visualise/utils"
 	"log"
-	"sync"
 	"time"
-
-	"os"
-
-	"github.com/dominikbraun/graph"
-	"github.com/dominikbraun/graph/draw"
 )
 
 func main() {
@@ -24,23 +18,25 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	g := graph.New(func(n nodes.Node) string { return n.Wallet.ID }, graph.Directed())
-	var w sync.WaitGroup
-	w.Add(len(network))
-	for _, node := range network {
-		_ = g.AddVertex(node)
-	}
-	for _, node := range network {
-		go func(node nodes.Node) {
-			defer w.Done()
-			for _, txn := range node.Txns {
-				if txn.Sender == node.Wallet.ID {
-					_ = g.AddEdge(node.Wallet.ID, txn.Reciever, graph.EdgeWeight(1))
-				}
-			}
-		}(node)
-	}
-	w.Wait()
-	file, _ := os.Create("map.gv")
-	_ = draw.DOT(g, file)
+	// g := graph.New(func(n nodes.Node) string { return n.Wallet.ID }, graph.Directed())
+	// var w sync.WaitGroup
+	// w.Add(len(network))
+	// for _, node := range network {
+	// 	_ = g.AddVertex(node)
+	// }
+	// for _, node := range network {
+	// 	go func(node nodes.Node) {
+	// 		defer w.Done()
+	// 		for _, txn := range node.Txns {
+	// 			if txn.Sender == node.Wallet.ID {
+	// 				_ = g.AddEdge(node.Wallet.ID, txn.Reciever, graph.EdgeWeight(1))
+	// 			}
+	// 		}
+	// 	}(node)
+	// }
+	// w.Wait()
+	// file, _ := os.Create("map.gv")
+	// _ = draw.DOT(g, file)
+	net := nodes.Network(network[:20])
+	net.GenVolumeGraph("vol.gv")
 }
