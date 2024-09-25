@@ -1,6 +1,7 @@
 package main
 
 import (
+	"go-chain-visualise/fetch"
 	"go-chain-visualise/nodes"
 	"go-chain-visualise/utils"
 	"log"
@@ -39,4 +40,5 @@ func main() {
 	// _ = draw.DOT(g, file)
 	net := nodes.Network(network[:20])
 	net.GenVolumeGraph("vol.gv")
+	fetch.ListTransactions("bc1qz9jpuvmex3hwpleczwqzw6vs3v7mmxxr02048a")
 }
