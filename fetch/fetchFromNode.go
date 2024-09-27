@@ -1,9 +1,6 @@
 package fetch
 
 import (
-	"fmt"
-	"log"
-	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -11,7 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/managedblockchainquery"
 )
 
-func ListTransactions(srcAddr string) {
+func ListTransactions(srcAddr string) ([]*managedblockchainquery.TransactionOutputItem, error) {
 	// Set up a session
 	ambQuerySession := session.Must(session.NewSessionWithOptions(session.Options{
 		Config: aws.Config{
@@ -27,8 +24,10 @@ func ListTransactions(srcAddr string) {
 	fromTime := time.Date(1971, 1, 1, 1, 1, 1, 1, time.UTC)
 	toTime := time.Now()
 	nonFinal := "NONFINAL"
+	txns := []*managedblockchainquery.TransactionOutputItem{}
 	// Call ListTransactions API. Transactions that have reached finality are always returned
-	listTransactionRequest, listTransactionResponse := client.ListTransactionsRequest(&managedblockchainquery.ListTransactionsInput{
+
+	errors := client.ListTransactionsPages(&managedblockchainquery.ListTransactionsInput{
 		Address: &ownerAddress,
 		Network: &network,
 		Sort: &managedblockchainquery.ListTransactionsSort{
@@ -40,20 +39,69 @@ func ListTransactions(srcAddr string) {
 		ToBlockchainInstant: &managedblockchainquery.BlockchainInstant{
 			Time: &toTime,
 		},
-
 		ConfirmationStatusFilter: &managedblockchainquery.ConfirmationStatusFilter{
 			Include: []*string{&nonFinal},
 		},
+	}, func(lto *managedblockchainquery.ListTransactionsOutput, b bool) bool {
+		txns = append(txns, lto.Transactions...)
+		if lto.NextToken == nil {
+			return false
+		} else {
+			lto.SetNextToken(*lto.NextToken)
+			return true
+		}
 	})
-	errors := listTransactionRequest.Send()
 
 	if errors != nil {
-		log.Fatal(errors)
+		return nil, errors
 	}
-	f, err := os.Create(srcAddr + "_txn.chain")
+	return txns, nil
+}
+
+func GeneratePassbook(txns []*managedblockchainquery.TransactionOutputItem, srcAddr string) ([][]string, error) {
+	txnList, err := GetHashes(txns)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
-	fmt.Fprintln(f, listTransactionResponse)
-	f.Close()
+	var (
+		Debit, Credit []string
+	)
+	for _, t := range txnList {
+		if t["to"] == srcAddr {
+			Credit = append(Credit, t["from"])
+		} else {
+			Debit = append(Credit, t["to"])
+		}
+	}
+	return [][]string{Debit, Credit}, nil
+}
+
+func GetHashes(txns []*managedblockchainquery.TransactionOutputItem) (map[string]map[string]string, error) {
+	ambQuerySession := session.Must(session.NewSessionWithOptions(session.Options{
+		Config: aws.Config{
+			Region: aws.String("us-east-1"),
+		},
+	}))
+	client := managedblockchainquery.New(ambQuerySession)
+	network := managedblockchainquery.QueryNetworkBitcoinMainnet
+	ids := make(map[string]map[string]string)
+	for _, txn := range txns {
+		gto, errors := client.GetTransaction(&managedblockchainquery.GetTransactionInput{
+			Network:         &network,
+			TransactionHash: txn.TransactionHash,
+		})
+		if errors != nil {
+			return ids, errors
+		}
+		if gto.Transaction.To == nil || gto.Transaction.From == nil {
+			//these txns are representing mined blocks.
+			// we can ignore for now
+			continue
+		}
+		ids[*txn.TransactionHash] = map[string]string{
+			"to":   *gto.Transaction.To,
+			"from": *gto.Transaction.From,
+		}
+	}
+	return ids, nil
 }
